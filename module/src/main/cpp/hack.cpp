@@ -19,7 +19,8 @@
 
 void hack_start(const char *game_data_dir) {
     bool load = false;
-    for (int i = 0; i < 60; i++) {
+    for (int i = 0; i < 20; i++) {
+        xdl_clearerr();
         void *handle = xdl_open("libil2cpp.so", 0);
         if (handle) {
             load = true;
@@ -27,6 +28,18 @@ void hack_start(const char *game_data_dir) {
             il2cpp_dump(game_data_dir);
             break;
         } else {
+            
+            int err = xdl_errno();
+            const char *errmsg = xdl_error();
+            
+            LOGE("xdl_open failed (attempt %d/10):", i + 1);
+            LOGE("  - errno: %d (%s)", err, strerror(err));
+            LOGE("  - xdl_error: %s", errmsg ? errmsg : "unknown");
+            
+            const char *dlerr = dlerror();
+            if (dlerr) {
+                LOGE("  - dlerror: %s", dlerr);
+            }
             sleep(1);
         }
     }
