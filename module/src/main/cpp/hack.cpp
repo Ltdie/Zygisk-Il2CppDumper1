@@ -29,16 +29,16 @@ void hack_start(const char *game_data_dir) {
             break;
         } else {
             
-            int err = xdl_errno();
-            const char *errmsg = xdl_error();
-            
-            LOGE("xdl_open failed (attempt %d/10):", i + 1);
-            LOGE("  - errno: %d (%s)", err, strerror(err));
-            LOGE("  - xdl_error: %s", errmsg ? errmsg : "unknown");
-            
             const char *dlerr = dlerror();
+            LOGE("xdl_open failed (attempt %d/10):", i + 1);
             if (dlerr) {
-                LOGE("  - dlerror: %s", dlerr);
+                LOGE("  dlerror: %s", dlerr);
+            } else {
+                LOGE("  errno: %d (%s)", errno, strerror(errno));
+            }
+            
+            if (access("libil2cpp.so", F_OK) == -1) {
+                LOGE("  libil2cpp.so not accessible");
             }
             sleep(1);
         }
