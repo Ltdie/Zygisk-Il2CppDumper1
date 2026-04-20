@@ -40,12 +40,24 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include "log.h"
 
 #include "xdl_iterate.h"
 #include "xdl_linker.h"
 #include "xdl_lzma.h"
 #include "xdl_util.h"
+
+#ifndef ZYGISK_IL2CPPDUMPER_LOG_H
+#define ZYGISK_IL2CPPDUMPER_LOG_H
+
+#include <android/log.h>
+
+#define LOG_TAG "Perfare"
+#define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
+#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+
+#endif //ZYGISK_IL2CPPDUMPER_LOG_H
 
 #ifndef __LP64__
 #define XDL_LIB_PATH "/system/lib"
