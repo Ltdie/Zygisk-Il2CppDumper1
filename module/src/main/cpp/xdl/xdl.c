@@ -425,7 +425,17 @@ static xdl_t *xdl_find_from_auxv(unsigned long type, const char *pathname) {
 
 static int xdl_find_iterate_cb(struct dl_phdr_info *info, size_t size, void *arg) {
   (void)size;
-
+  // ========== 无条件打印所有遍历到的模块 ==========
+  {
+    char buf[512];
+    int len = snprintf(buf, sizeof(buf), 
+                       "[xDL] module: '%s', addr=0x%lx, phdr=%p, phnum=%d\n",
+                       info->dlpi_name ? info->dlpi_name : "(null)",
+                       (unsigned long)info->dlpi_addr,
+                       (void *)info->dlpi_phdr,
+                       (int)info->dlpi_phnum);
+    write(2, buf, len);
+  }
   uintptr_t *pkg = (uintptr_t *)arg;
   xdl_t **self = (xdl_t **)*pkg++;
   const char *filename = (const char *)*pkg;
