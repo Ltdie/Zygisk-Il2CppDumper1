@@ -284,9 +284,18 @@ int xdl_iterate_phdr_impl(xdl_iterate_phdr_cb_t cb, void *cb_arg, int flags) {
 #if (defined(__arm__) || defined(__i386__)) && __ANDROID_API__ < __ANDROID_API_L__
   if (xdl_util_get_api_level() < __ANDROID_API_L__) return xdl_iterate_by_maps(cb, cb_arg);
 #endif
-
-  // iterate by dl_iterate_phdr()
-  return xdl_iterate_by_linker(cb, cb_arg, flags);
+int result = 0;
+  // 先尝试 dl_iterate_phdr
+  result = xdl_iterate_by_linker(cb, cb_arg, flags);
+  
+  // 如果 dl_iterate_phdr 没有找到任何模块，回退到 /proc/self/maps
+  if (0 == result) {
+    // 可以通过 flags 或全局变量控制是否启用回退
+    // 这里直接启用
+    result = xdl_iterate_by_maps(cb, cb_arg);
+  }
+  
+  return result;
 }
 
 int xdl_iterate_get_full_pathname(uintptr_t base, char *buf, size_t buf_len) {
