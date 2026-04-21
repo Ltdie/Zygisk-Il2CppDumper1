@@ -206,7 +206,6 @@ static int xdl_iterate_by_linker(xdl_iterate_phdr_cb_t cb, void *cb_arg, int fla
   return r;
 }
 
-#if (defined(__arm__) || defined(__i386__)) && __ANDROID_API__ < __ANDROID_API_L__
 static int xdl_iterate_by_maps(xdl_iterate_phdr_cb_t cb, void *cb_arg) {
   FILE *maps = fopen("/proc/self/maps", "r");
   if (NULL == maps) return 0;
@@ -277,7 +276,6 @@ static int xdl_iterate_by_maps(xdl_iterate_phdr_cb_t cb, void *cb_arg) {
   fclose(maps);
   return r;
 }
-#endif
 
 int xdl_iterate_phdr_impl(xdl_iterate_phdr_cb_t cb, void *cb_arg, int flags) {
   // iterate by /proc/self/maps in Android 4.x (Android 4.x only supports arm32 and x86)
