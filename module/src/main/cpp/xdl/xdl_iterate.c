@@ -208,74 +208,98 @@ static int xdl_iterate_by_linker(xdl_iterate_phdr_cb_t cb, void *cb_arg, int fla
 
 static int xdl_iterate_by_maps(xdl_iterate_phdr_cb_t cb, void *cb_arg) {
   FILE *maps = fopen("/proc/self/maps", "r");
-  if (NULL == maps) return 0;
+  if (NULL == maps) {
+    LOGI("Failed to open /proc/self/maps");
+    return 0;
+  }
 
   int r = 0;
-  char buf1[1024], buf2[1024];
-  char *line = buf1;
-  uintptr_t prev_base = 0;
-  bool try_next_line = false;
+  char line[1024];
+  
+  struct { char pathname[1024]; uintptr_t base; ino_t inode; } seen[256];
+  int seen_count = 0;
 
-  while (fgets(line, sizeof(buf1), maps)) {
-    // Try to find an ELF which loaded by linker.
-    uintptr_t base, offset;
-    char exec;
-    if (3 != sscanf(line, "%" SCNxPTR "-%*" SCNxPTR " r%*c%cp %" SCNxPTR " ", &base, &exec, &offset)) goto clean;
-
-    if ('-' == exec && 0 == offset) {
-      // r--p
-      prev_base = base;
-      line = (line == buf1 ? buf2 : buf1);
-      try_next_line = true;
+  LOGI("Starting /proc/self/maps iteration");
+  
+  while (fgets(line, sizeof(line), maps)) {
+    uintptr_t base, end, offset;
+    char perm[5];
+    char pathname[1024] = {0};
+    unsigned int dev_major, dev_minor;
+    unsigned long long inode;
+    
+    int n = sscanf(line, "%" SCNxPTR "-%" SCNxPTR " %4s %" SCNxPTR " %x:%x %llu %1023s",
+                   &base, &end, perm, &offset, &dev_major, &dev_minor, &inode, pathname);
+    
+    // 调试：打印每一行
+    if (pathname[0] != '\0') {
+      LOGI("maps line: base=0x%lx perm=%s offset=0x%lx inode=%llu path=%s",
+           base, perm, offset, inode, pathname);
+    }
+    
+    if (n < 8 || offset != 0 || pathname[0] == '\0' || pathname[0] == '[') {
       continue;
     }
-    else if (exec == 'x') {
-      // r-xp
-      char *pathname = NULL;
-      if (try_next_line && 0 != offset) {
-        char *prev = (line == buf1 ? buf2 : buf1);
-        char *prev_pathname = strchr(prev, '/');
-        if (NULL == prev_pathname) goto clean;
-
-        pathname = strchr(line, '/');
-        if (NULL == pathname) goto clean;
-
-        xdl_util_trim_ending(prev_pathname);
-        xdl_util_trim_ending(pathname);
-        if (0 != strcmp(prev_pathname, pathname)) goto clean;
-
-        // we found the line with r-xp in the next line
-        base = prev_base;
-        offset = 0;
+    
+    LOGI("Checking: offset=0, path=%s", pathname);
+    
+    // 去重检查
+    bool already_seen = false;
+    for (int i = 0; i < seen_count; i++) {
+      if (seen[i].inode == (ino_t)inode) {
+        already_seen = true;
+        LOGI("Already seen inode %llu, skipping", inode);
+        break;
       }
-
-      if (0 != offset) goto clean;
-
-      // get pathname
-      if (NULL == pathname) {
-        pathname = strchr(line, '/');
-        if (NULL == pathname) goto clean;
-        xdl_util_trim_ending(pathname);
-      }
-
-      if (0 != memcmp((void *)base, ELFMAG, SELFMAG)) goto clean;
-      ElfW(Ehdr) *ehdr = (ElfW(Ehdr) *)base;
-      struct dl_phdr_info info;
-      info.dlpi_name = pathname;
-      info.dlpi_phdr = (const ElfW(Phdr) *)(base + ehdr->e_phoff);
-      info.dlpi_phnum = ehdr->e_phnum;
-
-      // callback
-      if (0 != (r = xdl_iterate_do_callback(cb, cb_arg, base, pathname, NULL))) break;
     }
-
- clean:
-    try_next_line = false;
+    if (already_seen) continue;
+    
+    // 验证 ELF Magic
+    if (0 != memcmp((void *)base, ELFMAG, SELFMAG)) {
+      LOGI("Not an ELF at 0x%lx", base);
+      continue;
+    }
+    
+    LOGI("Valid ELF found: base=0x%lx, path=%s", base, pathname);
+    
+    // 记录
+    strlcpy(seen[seen_count].pathname, pathname, sizeof(seen[0].pathname));
+    seen[seen_count].base = base;
+    seen[seen_count].inode = (ino_t)inode;
+    seen_count++;
+    
+    // 解析并回调
+    ElfW(Ehdr) *ehdr = (ElfW(Ehdr) *)base;
+    struct dl_phdr_info info;
+    info.dlpi_name = pathname;
+    info.dlpi_phdr = (const ElfW(Phdr) *)(base + ehdr->e_phoff);
+    info.dlpi_phnum = ehdr->e_phnum;
+    
+    uintptr_t min_vaddr = UINTPTR_MAX;
+    for (size_t i = 0; i < info.dlpi_phnum; i++) {
+      if (PT_LOAD == info.dlpi_phdr[i].p_type) {
+        if (min_vaddr > info.dlpi_phdr[i].p_vaddr)
+          min_vaddr = info.dlpi_phdr[i].p_vaddr;
+      }
+    }
+    
+    if (UINTPTR_MAX == min_vaddr) {
+      LOGI("No PT_LOAD segment found");
+      continue;
+    }
+    
+    info.dlpi_addr = (ElfW(Addr))(base - min_vaddr);
+    LOGI("Callback with dlpi_addr=0x%lx", info.dlpi_addr);
+    
+    r = cb(&info, sizeof(struct dl_phdr_info), cb_arg);
+    if (0 != r) break;
   }
 
   fclose(maps);
+  LOGI("Finished /proc/self/maps iteration, result=%d", r);
   return r;
 }
+
 
 int xdl_iterate_phdr_impl(xdl_iterate_phdr_cb_t cb, void *cb_arg, int flags) {
   // iterate by /proc/self/maps in Android 4.x (Android 4.x only supports arm32 and x86)
