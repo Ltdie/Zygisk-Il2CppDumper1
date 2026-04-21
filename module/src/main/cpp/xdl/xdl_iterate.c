@@ -51,6 +51,8 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
+#endif //ZYGISK_IL2CPPDUMPER_LOG_H
+
 /*
  * =========================================================================================================
  * API-LEVEL  ANDROID-VERSION  SOLUTION
@@ -242,10 +244,10 @@ static int xdl_iterate_by_maps(xdl_iterate_phdr_cb_t cb, void *cb_arg) {
     int n = sscanf(line, "%" SCNxPTR "-%" SCNxPTR " %4s %" SCNxPTR " %x:%x %llu %1023s",
                    &base, &end, perm, &offset, &dev_major, &dev_minor, &inode, pathname);
     
-    // 调试：打印每一行
+    // 修复格式字符串
     if (pathname[0] != '\0') {
-      LOGI("maps line: base=0x%lx perm=%s offset=0x%lx inode=%llu path=%s",
-           base, perm, offset, inode, pathname);
+      LOGI("maps line: base=0x%" PRIx64 " perm=%s offset=0x%" PRIx64 " inode=%llu path=%s",
+           (uint64_t)base, perm, (uint64_t)offset, inode, pathname);
     }
     
     if (n < 8 || offset != 0 || pathname[0] == '\0' || pathname[0] == '[') {
@@ -258,8 +260,8 @@ static int xdl_iterate_by_maps(xdl_iterate_phdr_cb_t cb, void *cb_arg) {
     bool already_seen = false;
     for (int i = 0; i < seen_count; i++) {
       if (seen[i].inode == (ino_t)inode) {
-        already_seen = true;
         LOGI("Already seen inode %llu, skipping", inode);
+        already_seen = true;
         break;
       }
     }
@@ -267,11 +269,11 @@ static int xdl_iterate_by_maps(xdl_iterate_phdr_cb_t cb, void *cb_arg) {
     
     // 验证 ELF Magic
     if (0 != memcmp((void *)base, ELFMAG, SELFMAG)) {
-      LOGI("Not an ELF at 0x%lx", base);
+      LOGI("Not an ELF at 0x%" PRIx64, (uint64_t)base);
       continue;
     }
     
-    LOGI("Valid ELF found: base=0x%lx, path=%s", base, pathname);
+    LOGI("Valid ELF found: base=0x%" PRIx64 ", path=%s", (uint64_t)base, pathname);
     
     // 记录
     strlcpy(seen[seen_count].pathname, pathname, sizeof(seen[0].pathname));
@@ -300,7 +302,9 @@ static int xdl_iterate_by_maps(xdl_iterate_phdr_cb_t cb, void *cb_arg) {
     }
     
     info.dlpi_addr = (ElfW(Addr))(base - min_vaddr);
-    LOGI("Callback with dlpi_addr=0x%lx", info.dlpi_addr);
+    
+    // 修复格式字符串
+    LOGI("Callback with dlpi_addr=0x%" PRIx64, (uint64_t)info.dlpi_addr);
     
     r = cb(&info, sizeof(struct dl_phdr_info), cb_arg);
     if (0 != r) break;
